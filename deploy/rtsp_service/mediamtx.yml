@@ -1,0 +1,15 @@
+# 基本配置
+rtspAddress: :8554
+protocols: [tcp]
+readTimeout: 10s
+writeTimeout: 10s
+readBufferCount: 512
+
+paths:
+  # 定义一个名为 'stream' 的流路径，FFmpeg 将推流到此路径
+  stream:
+    #runOnInit: ffmpeg -re -stream_loop -1 -i /media/test-20250918.mp4 -c copy -f rtsp rtsp://localhost:8554/stream
+    runOnInit: 
+      ffmpeg -re -stream_loop -1 -i /media/test-20250918.mp4 -vf "scale=920:-1" -c:v libx264 -preset ultrafast -tune zerolatency  -f rtsp rtsp://localhost:8554/stream
+    
+    #-an 

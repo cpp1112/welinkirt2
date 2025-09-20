@@ -1,0 +1,26 @@
+FROM ubuntu:20.04
+
+# 增加一个非root用户，以备个别非root软件使用
+RUN adduser app
+
+# 设置工作目录
+RUN mkdir /app
+WORKDIR /app
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+#配置apt源
+COPY sources.list /etc/apt/sources.list 
+
+# 安装系统依赖
+RUN apt-get update && apt-get install -y \
+    python3 \
+    python3-pip \
+    ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
+
+#安装pip包
+RUN pip3 install -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple \
+    opencv-python==4.5.5.64 numpy==1.21.6 flask redis
+
+
