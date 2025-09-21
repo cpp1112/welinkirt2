@@ -1,4 +1,5 @@
 # -*- coding:utf-8 -*-
+import os
 import json
 import sys
 import time
@@ -100,6 +101,7 @@ def test_chain():
     print("提交视频剪辑请求")
     task_info = create_clip_task(hclient)
     task_id = task_info["task_id"]
+    furl = task_info['download_url']
     print("剪辑任务id:", task_id)
     
     #获取task状态
@@ -120,9 +122,9 @@ def test_chain():
         sys.exit()
     # task done
     print("下载视频文件...")
-    furl = baseurl + "/static/" + task_id + ".mp4"
-    spath = "./" + task_id + ".mp4"
-    download_file_simple(furl, spath)
+    download_url = baseurl + "/" + furl
+    spath = "./" + os.path.basename(download_url)
+    download_file_simple(download_url, spath)
     return
 
 

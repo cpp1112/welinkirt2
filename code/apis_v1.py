@@ -29,8 +29,9 @@ def create_clip_task():
     timestamp = paras["timestamp"]
     salt = "".join(random.sample(string.ascii_letters, 5))
     task_id = "task_clip_{}_{}".format(str(int(timestamp)), salt)
+    file_url = "static/" + task_id + ".mp4"
 
-    task = {"task_id": task_id, "status": "created", "timestamp": timestamp}
+    task = {"task_id": task_id, "status": "created", "timestamp": timestamp, "download_url": file_url}
     task_info.append(task)
     task_producer.produce(task)
 
