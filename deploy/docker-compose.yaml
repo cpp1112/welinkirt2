@@ -2,7 +2,7 @@ services:
   redis:
     image: redis:6.2
     container_name: redis
-    command: redis-server --requirepass re7890dis
+    command: redis-server 
     ports:
       - "6379:6379"
     volumes:
@@ -11,39 +11,29 @@ services:
     networks:
       - app-network
 
-  rtsp-service:
-    image: bluenviron/mediamtx:1.14.0-ffmpeg
-    container_name: rtsp-service
-    ports:
-      - "8554:8554"
-    volumes:
-      - ./rtsp_service/test-20250918.mp4:/media/test-20250918.mp4
-      - ./rtsp_service/mediamtx.yml:/mediamtx.yml
-    networks:
-      - app-network
-
   flask-app:
     #build: ./build  # 应用Dockerfile路径,已经构建，此处不再重复构建
-    image: video:base-1
+    image: video:base-2
     container_name: flask-app
     command: python3 server.py
     ports:
       - "5000:5000"
     volumes:
       - ../code:/app  #代码挂载
+    depends_on:
+      - redis
     networks:
       - app-network
 
   worker-app:
     #和flask使用相同的镜像。该镜像只有环境，没有代码。
-    image: video:base-1
-    container_name: worker-app
-    command: python3 worker.py
+    image: video:base-2
+    container_name: event_fusion
+    command: python3 event_fusion.py
     volumes:
       - ../code:/app  #代码挂载
       - ../static:/app/static  # 挂载静态文件目录，与nginx共享static
     depends_on:
-      - rtsp-service
       - redis
     networks:
       - app-network

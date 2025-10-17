@@ -21,6 +21,6 @@ RUN apt-get update && apt-get install -y \
 
 #安装pip包
 RUN pip3 install -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple \
-    opencv-python==4.5.5.64 numpy==1.21.6 flask redis
+    opencv-python==4.5.5.64 numpy==1.21.6 flask redis requests aiohttp
 
 

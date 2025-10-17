@@ -49,36 +49,102 @@ def response_verify(r):
             sys.exit()
 
 
-def create_clip_task(hclient):
-    url = "/api/v1/task/clip"
-    data = {"timestamp": time.time()}
-    r = hclient.post(url, data=data)
-    response_verify(r)
-    d = json.loads(r.text)
-    task_info = d['data'].get("task")
-    #{"task_id": task_id, "status": "created", "timestamp": timestamp}
-    if not task_info:
-        print("创建剪辑任务失败")
-        sys.exit()
-    return task_info
+def send_events(hclient):
+    url = "/api/v1/fusion/event"
+    #url = "/api/v1/receiver/event"
+    # 示例事件数据
+    events = [
+        {
+            "alarmID": "202509160001",
+            "stakeNum": "K0+100",
+            "reportCount": 1,
+            "eventTime": "2025-09-16 10:26:00",
+            "eventType": "01",
+            "direction": 1,
+            "eventLevel": "1",
+            "videoUrl": "http://example.com/v.mp4"
+        },
+        {
+            "alarmID": "202509160002",
+            "stakeNum": "K0+200",
+            "reportCount": 1,
+            "eventTime": "2025-09-16 10:26:01",
+            "eventType": "01",  #需要和第一个event合并处理
+            "direction": 1,
+            "eventLevel": "1",
+            "videoUrl": "http://example.com/v.mp4"
+        },
+        {
+            "alarmID": "202509160003",
+            "stakeNum": "K0+100",
+            "reportCount": 1,
+            "eventTime": "2025-09-16 10:26:02",
+            "eventType": "07",
+            "direction": 1,
+            "eventLevel": "1",
+            "videoUrl": "http://example.com/v.mp4"
+        },
+        {
+            "alarmID": "202509160004",
+            "stakeNum": "K0+100",
+            "reportCount": 1,
+            "eventTime": "2025-09-16 10:26:03",
+            "eventType": "01",
+            "direction": 1,
+            "eventLevel": "5",  #事件窗口期内，抑制事件 07、08、09
+            "videoUrl": "http://example.com/v.mp4"
+        },
+        {
+            "alarmID": "202509160005",
+            "stakeNum": "K0+100",
+            "reportCount": 1,
+            "eventTime": "2025-09-16 10:26:04",
+            "eventType": "11",  #施工占道事件，应抑制其他事件上报
+            "direction": 1,
+            "eventLevel": "1",
+            "videoUrl": "http://example.com/v.mp4"
+        },
+        {
+            "alarmID": "202509160006",
+            "stakeNum": "K0+100",
+            "reportCount": 1,
+            "eventTime": "2025-09-16 10:26:05",
+            "eventType": "01",
+            "direction": 1,
+            "eventLevel": "1",
+            "videoUrl": "http://example.com/v.mp4"
+        }
+    ]
+    
+    # 处理事件
+    for e in events:
+        print("发送事件：", e["alarmID"])
+        r = hclient.post(url, data={"data": e})
+        response_verify(r)
+        d = json.loads(r.text)
 
 
-def get_task_status(hclient, task_id):
-    url = f"/api/v1/task/{task_id}/status"
+def get_events(hclient):
+    url = "/api/v1/events"
     r = hclient.get(url)
     response_verify(r)
     d = json.loads(r.text)['data']
     if not d:
         print("no data")
         sys.exit()
-    task_status = d.get("task_status")
-    return task_status
+    d = [json.loads(i) for i in d]
+    print("获取最终事件：", [i["alarmID"] for i in d])
+    return d
 
 
-def run_task(hclient, task_id):
-    url = f"/api/v1/task/{task_id}/run"
-    r = hclient.post(url)
-    response_verify(r)
+def get_one_event_video(event):
+    url = event.get("videoUrl")
+    if not url:
+        return
+    print("下载视频文件...")
+    #download_url = baseurl + "/" + furl
+    spath = "./test.mp4"
+    download_file_simple(url, spath)
     return
 
 
@@ -94,84 +160,40 @@ def download_file_simple(url, save_path):
 
 
 def test_chain():
-    baseurl = "http://127.0.0.1:80"
+    baseurl = "http://127.0.0.1:5000"
     hclient = HttpClient(baseurl=baseurl)
 
     #提交视频剪辑请求
-    print("提交视频剪辑请求")
-    task_info = create_clip_task(hclient)
-    task_id = task_info["task_id"]
-    furl = task_info['download_url']
-    print("剪辑任务id:", task_id)
+    print("模拟前端发送事件")
+    send_events(hclient)
+
+    print("等待事件处理....")
+    time.sleep(3)
     
-    #获取task状态
-    task_status = get_task_status(hclient, task_id)
-    if task_status not in ("done", "failed"):
-        bt = time.time()
-        timeout = 30
-        while  True:
-            time.sleep(1)
-            task_status = get_task_status(hclient, task_id)
-            if task_status in ("done", "failed"):
-                break
-            if time.time() - bt > timeout:
-                print(f"任务超过{timeout}s未完成，程序将退出")
-                sys.exit()
-    if task_status == "failed":
-        print(f"任务状态failed，程序将退出")
-        sys.exit()
-    # task done
-    print("下载视频文件...")
-    download_url = baseurl + "/" + furl
-    spath = "./" + os.path.basename(download_url)
-    download_file_simple(download_url, spath)
+    #获取events
+    events = get_events(hclient)
+    #获取事件视频文件
+    #event = json.loads(events[0])
+    event = events[0]
+    print("下载任意一个事件的视频...")
+    get_one_event_video(event)
     return
 
 
 def test():
-    baseurl = "http://127.0.0.1:80"
+    baseurl = "http://127.0.0.1:5000"
     hclient = HttpClient(baseurl=baseurl)
 
     #提交视频剪辑请求
-    #print("提交视频剪辑请求")
-    #task_info = create_clip_task(hclient)
-    
-    #获取task状态
-    #task_id = task_info["task_id"]
-    
-    task_id = "task_clip_1758355563_JaCfR"
-    #print(get_task_status(hclient, task_id))
-    #return
-    
-    furl = baseurl + "/static/" + task_id + ".mp4"
-    spath = "./" + task_id + ".mp4"
-    download_file_simple(furl, spath)
-    return
-
-    print("剪辑任务id:", task_id)
-
-    task_status = get_task_status(hclient, task_id)
-    if task_status not in ("done", "failed"):
-        bt = time.time()
-        timeout = 30
-        while  True:
-            time.sleep(1)
-            task_status = get_task_status(hclient, task_id)
-            if task_status in ("done", "failed"):
-                break
-            if time.time() - bt > timeout:
-                print(f"任务超过{timeout}s未完成，程序将退出")
-                sys.exit()
-    if task_status == "failed":
-        print(f"任务状态failed，程序将退出")
-        sys.exit()
-
-    dowload_url = baseurl + f"/static/{task_id}"
-
+    print("模拟前端发送事件")
+    send_events(hclient)
+    #print("获取事件")
+    #get_events(hclient)
 
 
 if __name__ == '__main__':
     test_chain()
+    #test()
 
 
 

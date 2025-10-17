@@ -7,17 +7,14 @@ import config
 
 
 def get_redis_client():
-    RD_HOST = config.REDIS_HOST
-    RD_PORT = config.REDIS_PORT
-    RD_DB = config.REDIS_DB
-    RD_PWD = config.REDIS_PWD
-    return redis.StrictRedis(host=RD_HOST, port=RD_PORT, db=RD_DB, password=RD_PWD, decode_responses=True)
+    RD_HOST = "192.168.1.8"
+    RD_PORT = 6379
+    return redis.StrictRedis(host=RD_HOST, port=RD_PORT, decode_responses=True)
 
 
-class TaskProducer:
+class Producer:
     """任务生产者"""   
-    def __init__(self, channel='video_tasks'):
-        self.channel = channel
+    def __init__(self):
         self.redis_client = get_redis_client()
         
     def connect(self):
@@ -35,8 +32,14 @@ class TaskProducer:
             self.redis_client.close()
             logger.info("Redis连接已关闭")
 
+
+class TaskProducer(Producer):
+    """任务生产者"""   
+    def __init__(self, channel='video_tasks'):
+        self.channel = channel
+        self.redis_client = get_redis_client()
+
     def produce(self, task_message):
-        print("+++++", task_message)
         if not task_message:
             return
         task_id = task_message.get('task_id')
@@ -52,60 +55,48 @@ class TaskProducer:
             return None
 
 
-class TaskInfo:
-    # redis存储任务
-    def __init__(self):
+class EventProducer(Producer):
+    """任务生产者"""   
+    def __init__(self, channel='raw_events'):
+        self.channel = channel
         self.redis_client = get_redis_client()
-        self.hkey = "task_clip"
 
-    def append(self, task_info):
-        task_id = task_info.get("task_id")
-        if not task_id:
+    def produce(self, event_message):
+        if not event_message:
             return
-        self.redis_client.hset(self.hkey, task_id, json.dumps(task_info))
-        return
-
-    def exists(self, task_id):
-        return self.redis_client.hget(self.hkey, task_id)
-
-    def get_status(self, task_id):
-        task = self.redis_client.hget(self.hkey, task_id)
-        if not task:
+        event_id = event_message.get('alarmID')
+        if not event_id:
             return
-        task = json.loads(task)
-        return task.get("status")
-
-    def update_status(self, task_id, task_status):
-        task = self.exists(task_id)
-        if not task:
-            return
-        task = json.loads(task)
-        if task["status"] == task_status:
-            return
-        task["status"] = task_status
-        self.redis_client.hset(self.hkey, task_id, json.dumps(task)) 
-
-    def delete_task(self, task_id):
-        self.redis_client.hdel(self.hkey, task_id)
+        try:
+            # 发布任务到Redis频道
+            self.redis_client.publish(self.channel, json.dumps(event_message))
+            print(f"已发布event: {event_id}")
+            return event_id
+        except redis.RedisError as e:
+            print(f"发布任务失败: {e}")
+            return None
 
 
-class TaskConsumer:
+class Consumer:
     """任务消费者"""
-    def __init__(self, handler=None, channel='video_tasks'):
+    def __init__(self, channel, handler=None):
         self.channel = channel
         self.redis_client = get_redis_client()
         self.pubsub = self.redis_client.pubsub()
-        self.task_handler = handler
+        self.handler = handler
 
     def set_handler(self, handler):
         """
         设置任务处理函数
         """
-        self.task_handler = handler
+        self.handler = handler
         
     def start_listening(self):
-        if not self.task_handler:
-            print("TaskConsumer has no handler!")
+        if not self.handler:
+            print("Consumer has no handler!")
+            sys.exit()
+        if not self.channel:
+            print("Consumer has no channel!")
             sys.exit()
         # 订阅频道
         self.pubsub.subscribe(self.channel)
@@ -120,13 +111,13 @@ class TaskConsumer:
             if message['type'] == 'subscribe':
                 print(f"成功订阅频道: {message['channel']}")
                 continue
-            # 处理实际任务消息
+            # 处理消息
             if message['type'] == 'message':
                 try:
-                    task_data = json.loads(message['data'])
-                    print(f"收到任务: {task_data}")
-                    # 调用任务处理函数
-                    self.task_handler(task_data)
+                    data = json.loads(message['data'])
+                    print(f"收到消息: {data}")
+                    # 调用处理函数
+                    self.handler(data)
                 except json.JSONDecodeError as e:
                     print(f"解析任务消息失败: {e}")
                 except KeyError as e:
@@ -151,7 +142,21 @@ class TaskConsumer:
             print("Redis连接已关闭")
 
 
-task_producer = TaskProducer()
-task_info = TaskInfo()
-task_consumer = TaskConsumer()
+class EventInfo:
+    # redis存储事件。作为事件接收服务的存储使用。生产环境需要使用mysql等持久存储。
+    def __init__(self):
+        self.redis_client = get_redis_client()
+        self.key = "event_info"
+
+    def append(self, event_info):
+        self.redis_client.lpush(self.key, json.dumps(event_info))
+        return
+
+    def get_events(self):
+        return self.redis_client.lrange(self.key, 0, -1)
+
+
+event_producer = EventProducer(channel='raw_events')
+event_consumer = Consumer(channel='raw_events')
+event_info = EventInfo()
 

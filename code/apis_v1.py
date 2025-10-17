@@ -5,7 +5,7 @@ import random
 import string
 from flask import Blueprint, request, jsonify
 
-from redis_client import task_info, task_producer
+from redis_client import event_producer, event_consumer, event_info 
 
 
 api_v1 = Blueprint('api_v1', __name__)
@@ -20,53 +20,32 @@ def ping():
     return make_json_response()
 
 
-@api_v1.route("/task/clip", methods=['POST'])
-def create_clip_task():
+@api_v1.route("/fusion/event", methods=['POST'])
+#模拟事件聚合服务接口。
+#该接口接收来自前端的事件报告
+def receive_raw_event():
     paras = request.get_json()
-    if "timestamp" not in paras:
-        return make_json_response(code=0, message="timestamp is required!")
-
-    timestamp = paras["timestamp"]
-    salt = "".join(random.sample(string.ascii_letters, 5))
-    task_id = "task_clip_{}_{}".format(str(int(timestamp)), salt)
-    file_url = "static/" + task_id + ".mp4"
-
-    task = {"task_id": task_id, "status": "created", "timestamp": timestamp, "download_url": file_url}
-    task_info.append(task)
-    task_producer.produce(task)
-
-    return make_json_response(data={"task": task})
+    event_data = paras.get("data")
+    if not event_data:
+        return make_json_response(code=0, message="event data is required!")
+    print("produce...")
+    event_producer.produce(event_data)
+    return make_json_response(data={"data": event_data})
 
 
-@api_v1.route("/task/<task_id>/status", methods=['GET'])
-def get_task_status(task_id):
-    if not task_info.exists(task_id):
-        return make_json_response(code=0, message="task is not exists")
-    status = task_info.get_status(task_id)
-    return make_json_response(data={"task_status": status})
-
-
-#测试使用
-@api_v1.route("/task/<task_id>/run", methods=['POST'])
-def run_clip_task(task_id):
-    task = task_info.exists(task_id)
-    if not task:
-        return make_json_response(code=0, message="task is not exists")
-    task = json.loads(task)
-    #task = {"task_id": task_id, "status": "created", "timestamp": timestamp}
-    task_producer.produce(task)
-    return make_json_response(data={"task": task})
-
-#测试使用
-@api_v1.route("/task/<task_id>/status/<status>", methods=['PATCH'])
-def update_task_status(task_id, status):
-    if not task_info.exists(task_id):
-        return make_json_response(code=0, message="task is not exists")
-    if status not in ("created", "running", "done", "failed"):
-        return make_json_response(code=0, message="status is invalid")
-    task_info.update_status(task_id, task_status)
-    return make_json_response(data={"task_status": status})
+@api_v1.route("/receiver/event", methods=['POST'])
+#模拟事件接收服务器receive接口
+def event_receiver():
+    paras = request.get_json()
+    event_data = paras.get("data")
+    if not event_data:
+        return make_json_response(code=0, message="event data is required!")
+    event_info.append(event_data)
+    return make_json_response(data={"data": event_data})
 
 
 
-
+@api_v1.route("/events", methods=['GET'])
+def get_events():
+    data = event_info.get_events()
+    return make_json_response(data=data)
