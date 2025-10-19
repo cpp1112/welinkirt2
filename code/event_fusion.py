@@ -78,7 +78,7 @@ class EventFusionService:
         """检查是否存在活跃的施工占道事件"""
         try:
             # 检查最近2分钟内是否有施工占道事件
-            two_minutes_ago = time.time() - 120
+            two_minutes_ago = time.time() - self.NEW_EVENT_THRESHOLD
             construction_events = await self.redis_client.zrangebyscore(
                 "active_events:11", two_minutes_ago, "+inf"
             )
@@ -91,7 +91,7 @@ class EventFusionService:
         """检查是否存在活跃的严重拥堵事件"""
         try:
             # 检查最近2分钟内是否有严重拥堵事件
-            two_minutes_ago = time.time() - 120
+            two_minutes_ago = time.time() - self.NEW_EVENT_THRESHOLD
             congestion_events = await self.redis_client.zrangebyscore(
                 "active_events:01:5", two_minutes_ago, "+inf"
             )
@@ -418,9 +418,13 @@ def main():
 async def test():
     # 初始化服务
     fusion_service = EventFusionService()
+    fusion_service.SILENCE_WINDOW = 5  # 60 1分钟静默窗口
+    fusion_service.NEW_EVENT_THRESHOLD = 10  # 120 2分钟新事件阈值
     await fusion_service.initialize()
 
     # 示例事件数据
+    # 需要融合相邻桩号的事件类型{"01", "04", "05", "06", "07", "08", "09", "15"}
+    # 严重拥堵事件抑制的事件类型{"07", "08", "09"}
     events = [
         {
             "alarmID": "202509160001",
@@ -442,18 +446,29 @@ async def test():
             "eventLevel": "1",
             "videoUrl": "http://example.com/v.mp4"
         },
+        {"time": 10},
         {
             "alarmID": "202509160003",
             "stakeNum": "K0+100",
             "reportCount": 1,
-            "eventTime": "2025-09-16 10:27:00",
-            "eventType": "07",
+            "eventTime": "2025-09-16 10:26:01",
+            "eventType": "01",  #新的时间窗口
             "direction": 1,
             "eventLevel": "1",
             "videoUrl": "http://example.com/v.mp4"
         },
         {
             "alarmID": "202509160004",
+            "stakeNum": "K0+100",
+            "reportCount": 1,
+            "eventTime": "2025-09-16 10:27:00",
+            "eventType": "07",  #需要和前一个event合并处理,间隔
+            "direction": 1,
+            "eventLevel": "1",
+            "videoUrl": "http://example.com/v.mp4"
+        },
+        {
+            "alarmID": "202509160005",
             "stakeNum": "K0+100",
             "reportCount": 1,
             "eventTime": "2025-09-16 10:26:00",
@@ -463,7 +478,17 @@ async def test():
             "videoUrl": "http://example.com/v.mp4"
         },
         {
-            "alarmID": "202509160005",
+            "alarmID": "202509160006",
+            "stakeNum": "K0+200",
+            "reportCount": 1,
+            "eventTime": "2025-09-16 10:26:01",
+            "eventType": "08",  #被抑制
+            "direction": 1,
+            "eventLevel": "1",
+            "videoUrl": "http://example.com/v.mp4"
+        },
+        {
+            "alarmID": "202509160007",
             "stakeNum": "K0+100",
             "reportCount": 1,
             "eventTime": "2025-09-16 10:29:00",
@@ -473,11 +498,33 @@ async def test():
             "videoUrl": "http://example.com/v.mp4"
         },
         {
-            "alarmID": "202509160006",
+            "alarmID": "202509160008",
             "stakeNum": "K0+100",
             "reportCount": 1,
             "eventTime": "2025-09-16 10:30:00",
-            "eventType": "01",
+            "eventType": "01",  #被抑制
+            "direction": 1,
+            "eventLevel": "1",
+            "videoUrl": "http://example.com/v.mp4"
+        },
+        {"time": 5},
+        {
+            "alarmID": "202509160009",
+            "stakeNum": "K0+100",
+            "reportCount": 1,
+            "eventTime": "2025-09-16 10:30:00",
+            "eventType": "01",  #被抑制
+            "direction": 1,
+            "eventLevel": "1",
+            "videoUrl": "http://example.com/v.mp4"
+        },
+        {"time": 8},
+        {
+            "alarmID": "202509160010",
+            "stakeNum": "K0+100",
+            "reportCount": 1,
+            "eventTime": "2025-09-16 10:30:00",
+            "eventType": "01", 
             "direction": 1,
             "eventLevel": "1",
             "videoUrl": "http://example.com/v.mp4"
@@ -485,10 +532,20 @@ async def test():
     ]
     # 处理事件
     for e in events:
-        event = await fusion_service.process_event(e)
-        if not event:  #事件被抑制
-            print("事件{}被抑制".format(e["alarmID"]))
+        if "time" in e:
+            print("sleep...")
+            time.sleep(e["time"])
             continue
+        else:
+            event = await fusion_service.process_event(e)
+            if not event:  #事件被抑制
+                print("事件{}被抑制".format(e["alarmID"]))
+                continue
+            else:
+                print("上报事件：", e)
+                continue
+
+        '''
         generate_video(event)
 
         data = {"data": event}
@@ -498,6 +555,7 @@ async def test():
             async with session.post(url, json=data, headers=headers) as response:
                 response.raise_for_status()
         print("已向事件接收服务发送事件{}".format(e["alarmID"]))
+        '''
 
         #resp = requests.post(url, data={"data": event}, headers={"Content-Type": "application/json"})
         #print("已向事件接收服务发送事件{}".format(e["alarmID"]), resp.status_code)
